@@ -1,0 +1,12 @@
+dist
+static/*.html
+static/js/engaged_time/*
+config/*.bak
+config/*.bak
+test/*.html
+*.log
+*.log*
+bck.js
+.*.swp
+.*.un~
+node_modules

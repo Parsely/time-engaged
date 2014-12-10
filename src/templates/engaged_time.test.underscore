@@ -1,0 +1,170 @@
+<!--
+Copyright 2014 Parse.ly, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Parse.ly - Engaged Time Test Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- BEGIN CSS -->
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      body {
+        padding-top: 60px; /* 60px to make the container go all the way to the bottom of the topbar */
+      }
+    </style>
+    <link href="/css/bootstrap-responsive.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/qunit-1.11.0.css" media="screen">
+    <!-- END CSS -->
+
+    <!-- BEGIN SCRIPTS -->
+    <!-- Load local jQuery, removing access to $ (use jQuery, not $). -->
+    <script src="/js/jquery.js"></script>
+    <script>jQuery.noConflict()</script>
+    <script src="/js/qunit-1.11.0.js"></script>
+
+    <!-- Le HTML5 shim, for IE6-8 support of HTML5 elements -->
+    <!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <!-- END SCRIPTS -->
+</head>
+<body>
+    <div class="navbar navbar-fixed-top">
+        <div class="navbar-inner">
+            <div class="container">
+                <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </a>
+                <a class="brand" href="http://parse.ly/api/tracker.html">
+                    Parse.ly - Engaged Time Tracker Test Page
+                </a>
+                <div class="nav-collapse">
+                    <ul class="nav"></ul>
+                </div><!--/.nav-collapse -->
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <p>
+            Special test page to ensure engaged time tracking works properly,
+            especially with YouTube video players.
+        </p>
+    </div> <!-- /container -->
+    <div class="container">
+        <h1 id="qunit-header">Test Suite</h1>
+        <h2 id="qunit-banner"></h2>
+        <div id="qunit-testrunner-toolbar"></div>
+        <h2 id="qunit-userAgent"></h2>
+        <ol id="qunit-tests"></ol>
+        <div id="qunit-fixture"></div>
+    </div>
+
+    <!-- VIDEOS -->
+    <div class="container">
+        <div class="row">
+            <h2 class="span12">Videos</h2>
+        </div>
+        <div class="row">
+            <h3 class="span3">YouTube</h3>
+            <div class="span9">
+                <div id="ytPlayer"></div>
+                <script>
+                    (function() {
+                        var tag = document.createElement('script');
+                        tag.src = "https://www.youtube.com/iframe_api";
+                        var firstScriptTag = document.getElementsByTagName('script')[0];
+                        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                        window.ytPlayers = [];
+
+                        window.onYouTubeIframeAPIReady = function() {
+                            console.log("Publisher: Adding eventHandler");
+                            var player = new YT.Player("ytPlayer", {
+                                events: {
+                                    "onReady": function onPlayerReady(event) {
+                                        console.log("Publisher: player ready");
+                                    },
+                                    "onStateChange": function onPlayerStateChange(event) {
+                                        console.log("Publisher: handler fired " + event.data);
+                                    }
+                                },
+                                videoId: "x6DD1k4BAUg",
+                                width: 640,
+                                height: 390,
+                                frameborder: 0
+                            });
+                            window.ytPlayers.push(player);
+                            if (window.CONFIG !== undefined &&
+                                window.CONFIG.listenToYTVideoPlayer !== undefined)
+                            {
+                                $.each(window.ytPlayers, function(i, player) {
+                                    CONFIG.listenToYTVideoPlayer(player);
+                                });
+                            }
+                        }
+                    })();
+                </script>
+            </div>
+        </div>
+        <!--
+        <div class="row">
+            <h3 class="span3">Brightcove</h3>
+            <div class="span9">
+                <script type="text/javascript" src="http://video.foxnews.com/v/embed.js?id=3654177068001&w=466&h=263"></script>
+                <noscript>Watch the latest video at <a href="http://video.foxnews.com">video.foxnews.com</a></noscript>
+            </div>
+        </div>
+        -->
+    </div>
+    <!-- END VIDEOS -->
+
+    <script>
+    // IE <= 8 doesn't know about console
+    if(typeof console === "undefined") {
+        var console = { log: function (logMsg) { } };
+    }
+    window.$ = window.jQuery;
+    var heartbeats = [];
+    var engagedSecs = 0;
+    window.lastHeartbeatTime = -1;
+    CONFIG = {
+            $: window.$,
+            onReady: function() {
+                $.each(ytPlayers, function(i, player) {
+                    CONFIG.listenToYTVideoPlayer(player);
+                });
+            },
+            onHeartbeat: function(engagedSecs) {
+                heartbeats.push(engagedSecs);
+                window.engagedSecs += engagedSecs;
+                var time = (new Date).getTime();
+                if (window.lastHeartbeatTime != -1) {
+                    window.timeSinceLastHeartbeat = time - window.lastHeartbeatTime;
+                }
+                window.lastHeartbeatTime = time;
+            },
+            secondsBetweenHeartbeats: 3
+    };
+    </script>
+
+    <script src="/js/engaged_time/engaged-time-debug.js"></script>
+
+    <!-- QUnit tests -->
+    <script src="/js/engaged_time.tests.qunit.js"></script>
+</body>
+</html>
