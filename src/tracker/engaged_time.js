@@ -62,11 +62,11 @@ limitations under the License.
 
     var now = new Date().getTime();
 
-    // how recently we saw the last event
+    // keep track of how recently we saw the last event
     root._lastEvent = now;
     // time of the last sample, used for time accumulation
     root._lastSample = now;
-    // accumulator of engaged seconds
+    // total number of engaged seconds to report next
     root._engagedMs = 0;
     // externally visible indicator of engaged status
     root.isEngaged = true;
@@ -85,31 +85,32 @@ limitations under the License.
         root.focused = false;
     });
 
-    // any time one of the events in EVENT_NAMES is triggered, note the time
-    // at which it occurred.
+    var _buildListener = function(event_name, callback) {
+        if (window.addEventListener) {
+            window.addEventListener(event_name, callback, false);
+        } else {
+            document.attachEvent("on" + event_name, callback);
+        }
+    };
+
+    // trigger the activity timeout with any of EVENT_NAMES
     var registerEvent = function() {
         root._lastEvent = new Date().getTime();
     };
     for (var i = 0; i < EVENT_NAMES.length; i++) {
-        if (window.addEventListener) {
-            window.addEventListener(EVENT_NAMES[i], registerEvent, false);
-        } else {
-            document.attachEvent("on" + EVENT_NAMES[i], registerEvent);
-        }
+        _buildListener(EVENT_NAMES[i], registerEvent);
     }
 
     /*
      * Track embedded YouTube videos
      * https://developers.google.com/youtube/js_api_reference#Events
-     *
-     * Maintain a flag that indicates whether the tracker is aware of
-     * any currently playing videos.
      */
     var YT_PLAYING = 1, YT_UNSTARTED = -1, YT_ENDED = 0, YT_PAUSED = 2;
     root.listenToYTVideoPlayer = function(player) {
         if (!$.isFunction(player["addEventListener"])) {
             return false;
         } else {
+            console.log("Adding event listener to YT video player: " + player.getIframe().id);
             player.addEventListener("onStateChange", function(event) {
                 if (event.data === YT_UNSTARTED || event.data === YT_ENDED ||
                     event.data === YT_PAUSED)
@@ -150,18 +151,22 @@ limitations under the License.
             var engagedSecs = Math.round(root._engagedMs / 1000);
             if (engagedSecs > 0 && engagedSecs <= Math.round(secondsBetweenHeartbeats))
             {
-                // Insert a pixel request here
-                console.log("Sent a heartbeat with inc=" + engagedSecs);
+                PARSELY.beacon.pixel.beacon({
+                    date: new Date().toString(),
+                    action: "heartbeat",
+                    inc: engagedSecs,
+                    url: PARSELY.lastRequest ? PARSELY.lastRequest.url : window.location.href,
+                    urlref: PARSELY.lastRequest ? PARSELY.lastRequest.urlref : window.document.referrer
+                });
 
                 if ($.isFunction(root.onHeartbeat)) {
                     root.onHeartbeat(engagedSecs);
                 }
             }
         }
-        // reset the accumulator
         root._engagedMs = 0;
     };
     // every secondsBetweenHeartbeats, attempt to send a pixel
     window.setInterval(sendHeartbeat, secondsBetweenHeartbeats * 1000);
-    window.onbeforeunload = sendHeartbeat;
+    _buildListener("beforeunload", sendHeartbeat);
 }());
