@@ -26,6 +26,7 @@ limitations under the License.
  */
 (function() {
     var root = window.CONFIG,
+        settings = root.settings || {},
         $ = root.$,
         util = root.util;
 
@@ -45,7 +46,7 @@ limitations under the License.
                        "touchstart", "touchenter", "keyup", "keydown"];
 
     var secondsBetweenHeartbeats = 5.5;  // default, 5.5s
-    // Allow integrators to configure secondsBetweenHeartbeats if, for example, they
+    // Allow publishers to configure secondsBetweenHeartbeats if, for example, they
     // wish to send fewer pixels for mobile devices
     if ($.isNumeric(root.secondsBetweenHeartbeats) &&
         root.secondsBetweenHeartbeats >= MIN_TIME_BETWEEN_HEARTBEATS &&
@@ -62,10 +63,12 @@ limitations under the License.
 
     var now = new Date().getTime();
 
+    root.engagedTime = root.engagedTime || {};
+
     // keep track of how recently we saw the last event
-    root._lastEvent = now;
+    root._lastEventTime = now;
     // time of the last sample, used for time accumulation
-    root._lastSample = now;
+    root._lastSampleTime = now;
     // total number of engaged seconds to report next
     root._engagedMs = 0;
     // externally visible indicator of engaged status
@@ -77,7 +80,11 @@ limitations under the License.
     // externally visible indicator of whether a video is being tracked and is playing
     root.videoPlaying = false;
 
-    // maintain a flag that indicates whether the window is currently focused
+    // Counts used for testing only
+    if (settings.test === true) {
+        root._handleEngagementActivityCalls = 0;
+    }
+
     $(document).on("show.visibility", function() {
         root.focused = true;
     });
@@ -85,21 +92,16 @@ limitations under the License.
         root.focused = false;
     });
 
-    var _buildListener = function(event_name, callback) {
-        if (window.addEventListener) {
-            window.addEventListener(event_name, callback, false);
-        } else {
-            document.attachEvent("on" + event_name, callback);
+    // trigger the activity timeout with any of EVENT_NAMES
+    var handleEngagementActivity = function() {
+        root._lastEventTime = new Date().getTime();
+        if (settings.test === true) {
+            root._handleEngagementActivityCalls++;
         }
     };
-
-    // trigger the activity timeout with any of EVENT_NAMES
-    var registerEvent = function() {
-        root._lastEvent = new Date().getTime();
-    };
-    for (var i = 0; i < EVENT_NAMES.length; i++) {
-        _buildListener(EVENT_NAMES[i], registerEvent);
-    }
+    $.each(EVENT_NAMES, function(i, eventName) {
+        util.windowAddEventListener(eventName, handleEngagementActivity);
+    });
 
     /*
      * Track embedded YouTube videos
@@ -110,7 +112,6 @@ limitations under the License.
         if (!$.isFunction(player["addEventListener"])) {
             return false;
         } else {
-            console.log("Adding event listener to YT video player: " + player.getIframe().id);
             player.addEventListener("onStateChange", function(event) {
                 if (event.data === YT_UNSTARTED || event.data === YT_ENDED ||
                     event.data === YT_PAUSED)
@@ -118,55 +119,80 @@ limitations under the License.
                     root.videoPlaying = false;
                 } else if (event.data === YT_PLAYING) {
                     root.videoPlaying = true;
-                    registerEvent();
+                    handleEngagementActivity();
                 }
             });
         }
     };
 
-    /*
-     * Every SAMPLE_RATE_SECONDS, increase the counter root._engagedMs
-     * by the amount of time engaged measured since the last sample was taken.
-     */
-    var sample = function() {
-        var currentTime = new Date().getTime();
-        // define "interacting" as "it is currently less than activeTimeout seconds
-        // since the last engagement event was triggered
-        root.isInteracting = currentTime - root._lastEvent < activeTimeout * 1000;
-        root.isEngaged = (root.isInteracting && root.focused) || root.videoPlaying;
-        // accumulate the amount of engaged time since last heartbeat
-        root._engagedMs += root.isEngaged ? (currentTime - root._lastSample) : 0;
-        root._lastSample = currentTime;
+    // Utility function to expose private members to unit tests
+    root.engagedTime.getParams = function() {
+        return {
+            minTimeBetweenHeartbeats: MIN_TIME_BETWEEN_HEARTBEATS,
+            maxTimeBetweenHeartbeats: MAX_TIME_BETWEEN_HEARTBEATS,
+            minActiveTimeout: MIN_ACTIVE_TIMEOUT,
+            maxActiveTimeout: MAX_ACTIVE_TIMEOUT,
+            activeTimeout: activeTimeout
+        };
     };
-    window.setInterval(sample, SAMPLE_RATE_SECONDS * 1000);
 
-    /*
-     * Every secondsBetweenHeartbeats seconds, send a heartbeat and reset the
-     * accumulator
-     */
-    var sendHeartbeat = function() {
-        if (typeof root.enableHeartbeats === "undefined" ||
-            (typeof root.enableHeartbeats === "boolean" && root.enableHeartbeats))
-        {
-            var engagedSecs = Math.round(root._engagedMs / 1000);
-            if (engagedSecs > 0 && engagedSecs <= Math.round(secondsBetweenHeartbeats))
-            {
+    root.engagedTime.sample = function(currentTime, lastEventTime, lastSampleTime, videoPlaying, focused, engagedMs) {
+        // Allows us to override for unit testing
+        currentTime = typeof currentTime === 'undefined' ? new Date().getTime() : currentTime;
+        lastEventTime = typeof lastEventTime === 'undefined' ? root._lastEventTime : lastEventTime;
+        lastSampleTime = typeof lastSampleTime === 'undefined' ? root._lastSampleTime : lastSampleTime;
+        videoPlaying = typeof videoPlaying === 'undefined' ? root.videoPlaying : videoPlaying;
+        focused = typeof focused === 'undefined' ? root.focused : focused;
+        engagedMs = typeof engagedMs === 'undefined' ? root._engagedMs : engagedMs;
+
+        root.isInteracting = (currentTime - lastEventTime) < (activeTimeout * 1000);
+        root.isEngaged = (root.isInteracting && focused) || videoPlaying;
+        // accumulate the amount of engaged time since last heartbeat
+        root._engagedMs += root.isEngaged ? (currentTime - lastSampleTime) : 0;
+        root._lastSampleTime = currentTime;
+
+        return root;
+    };
+    if (typeof settings.test === 'undefined' || settings.test === false) {
+        window.setInterval(root.engagedTime.sample, SAMPLE_RATE_SECONDS * 1000);
+    }
+
+    root.engagedTime.sendHeartbeat = function(enableHeartbeats, engagedMs) {
+        // Allows us to override for unit testing
+        enableHeartbeats = typeof enableHeartbeats === 'undefined' ? root.enableHeartbeats : enableHeartbeats;
+        engagedMs = typeof engagedMs === 'undefined' ? root._engagedMs : engagedMs;
+
+        var windowAlias = util.getWindow();
+        var heartbeatsEnabled = (typeof enableHeartbeats === 'undefined' || enableHeartbeats === true);
+        if (heartbeatsEnabled) {
+            var engagedSecs = engagedMs / 1000;
+            var roundedSecs = Math.round(engagedSecs);
+            if (roundedSecs > 0 && engagedSecs <= (secondsBetweenHeartbeats + 0.25)) {
+                /*
                 PARSELY.beacon.pixel.beacon({
                     date: new Date().toString(),
                     action: "heartbeat",
-                    inc: engagedSecs,
-                    url: PARSELY.lastRequest ? PARSELY.lastRequest.url : window.location.href,
-                    urlref: PARSELY.lastRequest ? PARSELY.lastRequest.urlref : window.document.referrer
+                    inc: roundedSecs,
+                    url: root.lastRequest ? root.lastRequest.url : windowAlias.location.href,
+                    urlref: root.lastRequest ? root.lastRequest.urlref : windowAlias.document.referrer
                 });
 
                 if ($.isFunction(root.onHeartbeat)) {
                     root.onHeartbeat(engagedSecs);
                 }
+                */
             }
         }
         root._engagedMs = 0;
     };
     // every secondsBetweenHeartbeats, attempt to send a pixel
-    window.setInterval(sendHeartbeat, secondsBetweenHeartbeats * 1000);
-    _buildListener("beforeunload", sendHeartbeat);
+    if (typeof settings.test === 'undefined' || settings.test === false) {
+        window.setInterval(root.engagedTime.sendHeartbeat, secondsBetweenHeartbeats * 1000);
+    }
+
+    // Make a best attempt to fire a heartbeat before the browser is closed
+    // have to use a wrapper function here since the an event listener will
+    // normally receive arguments that will collide with those sendHeartbeat
+    // is expecting
+    util.windowAddEventListener('beforeunload', function handleBeforeUnload() { root.engagedTime.sendHeartbeat(); });
 }());

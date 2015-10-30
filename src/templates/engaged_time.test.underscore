@@ -158,7 +158,10 @@ limitations under the License.
                 }
                 window.lastHeartbeatTime = time;
             },
-            secondsBetweenHeartbeats: 3
+            secondsBetweenHeartbeats: 3,
+            settings: {
+                test: true
+            }
     };
     </script>
 

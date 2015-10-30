@@ -39,7 +39,10 @@ limitations under the License.
   */
 (function() {
     var QUnit = window.QUnit,
-        $ = window.jQuery;
+        $ = window.jQuery,
+        isIE678 = navigator.userAgent.match(/; MSIE [678]\.0;/) !== null,
+        isPhantomJS = navigator.userAgent.indexOf('PhantomJS') >= 0,
+        root = window.CONFIG;
 
     // Fire spoofed events in a cross-browser manner (including IE<=8)
     // http://stackoverflow.com/a/11181451/735204
@@ -89,89 +92,198 @@ limitations under the License.
         QUnit.push(actual >= min && actual <= max, actual, expected, message);
     };
 
-    var disable = function() {
-        QUnit.asyncTest("Engaged Time - Disable heartbeats", function(assert) {
-            QUnit.expect(1);
+    root.enableHeartbeats = true;
+    QUnit.module("Engaged time sample() tests", {
+        beforeEach: function() {
+            this.currentTime = 1430452800000;
+        },
+        afterEach: function() {
+            // This variable is built up cumulatively, need to reset after each
+            // test
+            root._engagedMs = 0
+        }
+    });
+    QUnit.test('sample() engagement outside activeTimeout', function(assert) {
+        var timeout = (root.engagedTime.getParams().activeTimeout * 1000) + 10,
+            lastEventTime = this.currentTime - timeout,
+            lastSampleTime = null,
+            videoPlaying = false,
+            focused = true;
 
-            var startEngagedSecs = engagedSecs;
+        var sample = root.engagedTime.sample(this.currentTime, lastEventTime, lastSampleTime, videoPlaying, focused);
+        assert.strictEqual(sample.isInteracting, false, 'should not be interacting outside of activeTimeout');
+        assert.strictEqual(sample.isEngaged, false, 'should not be engaged if not interacting');
+        assert.strictEqual(sample._engagedMs, 0, 'no engaged time if not engaged');
+        assert.strictEqual(sample._lastSampleTime, this.currentTime);
+    });
+    QUnit.test('sample() engagement inside activeTimeout and focused', function(assert) {
+        var timeout = (root.engagedTime.getParams().activeTimeout * 1000) - 10,
+            lastEventTime = this.currentTime - timeout,
+            lastSampleTime = this.currentTime - 100,
+            videoPlaying = false,
+            focused = true,
+            engagedMs = 0;
 
-            var disableTest = function() {
-                assert.numberAlmostEqual(engagedSecs - startEngagedSecs, 0, 0);
+        var sample = root.engagedTime.sample(this.currentTime, lastEventTime, lastSampleTime, videoPlaying, focused, engagedMs);
+        assert.strictEqual(sample.isInteracting, true, 'should be interacting inside of activeTimeout');
+        assert.strictEqual(sample.isEngaged, true, 'should not be engaged focused + interacting');
+        assert.strictEqual(sample._engagedMs, 100);
+        assert.strictEqual(sample._lastSampleTime, this.currentTime);
+    });
+    QUnit.test('sample() engagement inside activeTimeout, but not focused', function(assert) {
+        var timeout = (root.engagedTime.getParams().activeTimeout * 1000) - 10,
+            lastEventTime = this.currentTime - timeout,
+            lastSampleTime = this.currentTime - 100,
+            videoPlaying = false,
+            focused = false,
+            engagedMs = 0;
 
-                QUnit.start();
-            };
+        var sample = root.engagedTime.sample(this.currentTime, lastEventTime, lastSampleTime, videoPlaying, focused, engagedMs);
+        assert.strictEqual(sample.isInteracting, true);
+        assert.strictEqual(sample.isEngaged, false);
+        assert.strictEqual(sample._engagedMs, 0);
+        assert.strictEqual(sample._lastSampleTime, this.currentTime);
+    });
+    QUnit.test('sample() no engagement, not focused, but video playing', function(assert) {
+        var timeout = (root.engagedTime.getParams().activeTimeout * 1000) + 10,
+            lastEventTime = this.currentTime - timeout,
+            lastSampleTime = this.currentTime - 100,
+            videoPlaying = true,
+            focused = false,
+            engagedMs = 0;
 
-            setTimeout(disableTest, 6000)
+        var sample = root.engagedTime.sample(this.currentTime, lastEventTime, lastSampleTime, videoPlaying, focused, engagedMs);
+        assert.strictEqual(sample.isInteracting, false);
+        assert.strictEqual(sample.isEngaged, true);
+        assert.strictEqual(sample._engagedMs, 100);
+        assert.strictEqual(sample._lastSampleTime, this.currentTime)
+    });
+
+
+
+
+
+
+    QUnit.module("Engaged time sendHeartbeat() tests", {
+        beforeEach: function() {
+            this.currentTime = 1430452800000;
+        },
+        afterEach: function() {
+            // This variable is built up cumulatively, need to reset after each
+            // test
+            root._engagedMs = 0
+        }
+    });
+    QUnit.test('sendHeartbeat() heartbeats enabled but no cumulative engagement time', function(assert) {
+        var enableHeartbeats = true,
+            engagedMs = 0;
+
+        var pixelCount = window.pixels.length;
+        root.engagedTime.sendHeartbeat(enableHeartbeats, engagedMs);
+        assert.strictEqual(window.pixels.length, pixelCount, 'no pixel should be fired');
+    });
+    QUnit.test('sendHeartbeat() heartbeats enabled and cumulative engagement time', function(assert) {
+        var enableHeartbeats = true,
+            engagedMs = 600;
+
+        root.engagedTime.sendHeartbeat(enableHeartbeats, engagedMs);
+        assert.strictEqual(root.lastRequest.action, 'heartbeat');
+        assert.strictEqual(root.lastRequest.inc, 1);
+        assert.strictEqual(root._engagedMs, 0);
+    });
+    QUnit.test('sendHeartbeat() heartbeats enabled but invalid cumulative engagement time', function(assert) {
+        var enableHeartbeats = true,
+            engagedMs = 90000;
+
+        var pixelCount = window.pixels.length;
+        root.engagedTime.sendHeartbeat(enableHeartbeats, engagedMs);
+        assert.strictEqual(window.pixels.length, pixelCount, 'no pixel should be fired');
+    });
+    QUnit.test('sendHeartbeat() heartbeats disabled', function(assert) {
+        var enableHeartbeats = false,
+            engagedMs = 600;
+
+        var pixelCount = window.pixels.length;
+        root.engagedTime.sendHeartbeat(enableHeartbeats, engagedMs);
+        assert.strictEqual(window.pixels.length, pixelCount, 'no pixel should be fired');
+    });
+    QUnit.test('sendHeartbeat() new page view changes heartbeat url/urlref', function(assert) {
+        var newURL = location.href.replace(".html", "") + "123",
+            urlref = location.href,
+            enableHeartbeats = true,
+            engagedMs = 600;
+
+        root.beacon.trackPageView({"url": newURL, "urlref": urlref});
+        root.engagedTime.sendHeartbeat(enableHeartbeats, engagedMs);
+        assert.strictEqual(root.lastRequest.action, 'heartbeat');
+        assert.strictEqual(root.lastRequest.inc, 1);
+        assert.strictEqual(root.lastRequest.url, newURL);
+        assert.strictEqual(root.lastRequest.urlref, urlref);
+        assert.strictEqual(root._engagedMs, 0);
+    });
+
+
+
+
+
+
+    QUnit.module('Engaged time engagement listener tests');
+    QUnit.test('Ensure that code listens for engagement events', function(assert) {
+        // This is a tough one to really test for fully since we can't trigger
+        // touch events on older browsers, so we'll cover the basics here
+        $.each(['mousedown', 'mouseup', 'mousemove', 'keyup', 'keydown', 'scroll'], function(i, eventType) {
+            var currentCalls = root._handleEngagementActivityCalls;
+            if (isIE678) {
+                if (eventType === 'scroll') {
+                    return;
+                }
+                triggerEvent(document, eventType);
+            } else {
+                triggerEvent(window, eventType);
+            }
+            assert.strictEqual(root._handleEngagementActivityCalls, currentCalls + 1, 'on' + eventType + ' triggers event listener');
         });
-    };
+    });
 
-    var youtube = function() {
-        QUnit.asyncTest("Engaged Time - YouTube Video Playing", function(assert) {
-            QUnit.expect(1);
 
-            var ytVideoTest = function() {
-                assert.numberAlmostEqual(engagedSecs, 26, 5);
 
-                $.each(window.ytPlayers, function(i, player) {
+
+
+
+    // TODO: testing of visibility events?
+
+    // IE 6/7/8 and PhantomJS have difficulty with the YT player API, so skip those tests there
+    if (!isIE678 && !isPhantomJS) {
+        QUnit.module('Engaged time YouTube video integration tests');
+        QUnit.test('Ensure YouTube video integration works', function(assert) {
+            var done = assert.async(),
+                currentCalls = root._handleEngagementActivityCalls;
+
+            function afterPlay() {
+                assert.strictEqual(root.videoPlaying, true, 'videoPlaying flag should be set');
+                assert.strictEqual(root._handleEngagementActivityCalls, currentCalls + 1, 'engagement activity should be registered');
+                currentCalls++;
+
+                $.each(window.ytPlayers, function pauseVideos(i, player) {
                     player.pauseVideo();
                 });
-                window.CONFIG.enableHeartbeats = false;
-                triggerEvent(window, "mousedown");
-                triggerEvent(window, "mouseup");
+            }
 
-                QUnit.start();
+            function afterPause() {
+                assert.strictEqual(root.videoPlaying, false, 'videoPlaying flag should be unset');
+                assert.strictEqual(root._handleEngagementActivityCalls, currentCalls, 'no additional engagement activity should be registered');
+                done();
+            }
 
-                disable();
-            };
+            $.each(window.ytPlayers, function playVideos(i, player) {
+                player.playVideo();
+            });
 
-            setTimeout(ytVideoTest, 18500)
+            setTimeout(function() {
+                afterPlay();
+                setTimeout(afterPause, 1500);
+            }, 1500);
         });
-    };
-
-    var userActivity = function() {
-        QUnit.asyncTest("Engaged Time - User Activity", function(assert) {
-            QUnit.expect(2);
-
-            var interactionTest = function() {
-                assert.numberAlmostEqual(engagedSecs, 10, 3);
-                assert.numberAlmostEqual(window.timeSinceLastHeartbeat, 3*1000, 1*1000)
-
-                QUnit.start();
-
-                // Trigger YT videos for the next test
-                $.each(window.ytPlayers, function(i, player) {
-                    player.playVideo();
-                });
-
-                youtube();
-            };
-
-            setTimeout(interactionTest, 21500);
-        });
-    };
-
-    QUnit.asyncTest("Engaged Time - Basic", function(assert) {
-        QUnit.expect(1);
-
-        var initialHeartbeatTest = function() {
-            // QUnit.ok(true);
-            assert.numberAlmostEqual(engagedSecs, 5, 2);
-            // QUnit.test("Initial heartbeat ping", function() {
-
-            // });
-
-            QUnit.start();
-
-            console.log("Triggering window.mousedown and window.mouseup");
-            triggerEvent(window, "mousedown");
-            triggerEvent(window, "mouseup");
-            triggerEvent(document, "mousedown");
-            triggerEvent(document, "mouseup");
-
-            userActivity();
-        };
-
-        setTimeout(initialHeartbeatTest, 5500);
-    });
+    }
 
 })();

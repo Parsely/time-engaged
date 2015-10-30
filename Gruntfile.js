@@ -52,6 +52,7 @@ module.exports = function(grunt) {
                     'src/tracker/lib/class.js',
                     'src/tracker/lib/jquery.custom-1.11.1.js',
                     'src/tracker/lib/jquery-visibility.js',
+                    'src/tracker/util.js',
                     'src/tracker/engaged_time.js',
                 ],
                 dest: 'dist/engaged-time-debug.js'
@@ -109,8 +110,13 @@ module.exports = function(grunt) {
     grunt.loadNpmTasks('grunt-contrib-watch');
 
     // Servers
-    grunt.registerTask('run-local', ['jshint', 'concat' ,'uglify', 'copy',
-                                     'template', 'mockserver', 'watch']);
+    grunt.registerTask('run-local',
+                       'Build JS and launch a mockserver to test locally in browser. Changes in source files will trigger a new build.',
+                       function(target) {
+        var tasks = ['jshint', 'concat' ,'uglify', 'copy',
+                     'template', 'mockserver', 'watch'];
+        grunt.task.run(tasks);
+    });
 
     grunt.registerMultiTask('template', 'generates an html file from a specified template', function(){
         var data = this.data;
