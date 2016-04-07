@@ -87,7 +87,7 @@ limitations under the License.
 
     var supportsPassive = false;
     try {
-        addEventListener("test", null, { get capture() { supportsPassive = true; } });
+        addEventListener("test", null, { get passive() { supportsPassive = true; } });
     } catch(e) {}
     var optionsOrCapture = false;
     if (supportsPassive)
