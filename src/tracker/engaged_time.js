@@ -87,7 +87,9 @@ limitations under the License.
 
     var supportsPassive = false;
     try {
-        addEventListener("test", null, { get passive() { supportsPassive = true; } });
+        addEventListener("test", null, Object.defineProperty({}, 'passive', {get: function () {
+            supportsPassive = true;
+        }}));
     } catch(e) {}
     var optionsOrCapture = false;
     if (supportsPassive)
