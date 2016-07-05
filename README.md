@@ -4,8 +4,9 @@ Parse.ly - Time Engaged Tracking
 ![](http://www.parsely.com/static/img/parsely-small.png)
 
 This repository contains Parse.ly's implementation of "time engaged" tracking.
-For an explanation of the methodology informing this implementation,
-see the [Parse.ly technical documentation](http://www.parsely.com/docs/integration/tracking/time_engaged.html).
+It contains a public mirror of Parse.ly's internal tracker and is not directly
+used by any Parse.ly systems. For an explanation of the methodology informing this
+implementation, see the [Parse.ly technical documentation](http://www.parsely.com/docs/integration/tracking/time_engaged.html).
 
 While the code tracking time engaged itself is unchanged from Parse.ly's
 production implementation, the support logic contained in this repository is
