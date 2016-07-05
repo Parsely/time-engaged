@@ -85,9 +85,19 @@ limitations under the License.
         root.focused = false;
     });
 
+    var supportsPassive = false;
+    try {
+        addEventListener("test", null, Object.defineProperty({}, 'passive', {get: function () {
+            supportsPassive = true;
+        }}));
+    } catch(e) {}
+    var optionsOrCapture = false;
+    if (supportsPassive)
+        optionsOrCapture = {passive:true, capture:false}
+    
     var _buildListener = function(event_name, callback) {
         if (window.addEventListener) {
-            window.addEventListener(event_name, callback, false);
+            window.addEventListener(event_name, callback, optionsOrCapture);
         } else {
             document.attachEvent("on" + event_name, callback);
         }
